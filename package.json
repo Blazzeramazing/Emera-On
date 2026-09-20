@@ -1,13 +1,31 @@
 {
-"name": "emera-server",
-"version": "1.0.0",
-"description": "Servidor backend para o Emera Player",
-"main": "server.js",
-"scripts": {
-"start": "node server.js"
-},
-"dependencies": {
-"cors": "^2.8.5",
-"express": "^4.18.2"
+  "name": "emera-server",
+  "version": "1.0.0",
+  "description": "Servidor backend para o Emera Player",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "music-metadata": "^10.0.0"
+  }
 }
-}
+```eof
+
+Ao guardar esta alteração no GitHub, o Render vai reiniciar sozinho, fazer o download do `music-metadata` e finalmente começar a extrair as capas!
+
+### Passo 2: Limpar a Memória do seu Frontend (Vercel)
+O seu navegador pode ter guardado a lista antiga de músicas na memória para tentar ser mais rápido, ignorando as novas informações que o servidor está a tentar enviar.
+1. Abra o seu site na Vercel.
+2. Clique no **ícone de engrenagem** (Definições/Settings) no menu esquerdo.
+3. Desça até ao fim e clique no botão vermelho **"Restaurar Aplicação (Reset)"**.
+4. O site vai reiniciar "limpo" e puxar as músicas fresquinhas do servidor já com as capas.
+
+### Passo 3: Verifique se os MP3s têm mesmo capa
+Às vezes sacamos uma música que tem o nome do artista no ficheiro (ex: `Nirvana - Smells Like Teen Spirit.mp3`), mas internamente o ficheiro está vazio de metadados (Tags ID3).
+* O servidor só consegue ler a capa e o autor se essa informação estiver "embutida" no MP3.
+* Se testou os 2 passos acima e ainda assim a capa não apareceu, o ficheiro não tem a imagem lá dentro. (Pode usar um programa gratuito no computador como o **Mp3tag** para arrastar fotos para dentro dos seus MP3s antes de os enviar para o GitHub).
+
+**Resumo da ação:** Atualize o `package.json` no GitHub, espere 1 minuto para o Render processar, faça o Reset na aplicação web e as suas capas vão aparecer!
