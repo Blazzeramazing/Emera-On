@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
+const crypto = require('crypto'); // Para criar nomes de arquivo seguros
 
 // Importação dinâmica (necessária porque o music-metadata mais recente usa ESM)
 let parseFile;
@@ -90,16 +91,18 @@ app.get('/api/tracks', async (req, res) => {
                 if (metadata.common.picture && metadata.common.picture.length > 0) {
                     const picture = metadata.common.picture[0];
                     const extension = picture.format.split('/')[1] || 'jpg';
-                    // Criar um nome único para a capa baseado no nome do ficheiro de áudio
-                    const coverFileName = `${encodeURIComponent(title.replace(/[^a-zA-Z0-9]/g, ''))}_cover.${extension}`;
+                    
+                    // Cria um nome de ficheiro seguro usando hash (impede problemas com caracteres especiais no nome da música)
+                    const hash = crypto.createHash('md5').update(title + artist).digest('hex');
+                    const coverFileName = `${hash}_cover.${extension}`;
                     const coverPath = path.join(COVERS_DIR, coverFileName);
                     
-                    // Só grava a imagem se ela ainda não existir (poupa tempo nos próximos loadings)
+                    // Só grava a imagem se ela ainda não existir
                     if (!fs.existsSync(coverPath)) {
-                        fs.writeFileSync(coverPath, picture.data);
+                        // CONVERSÃO CRUCIAL AQUI: transformar o array de bits da imagem num Buffer do Node.js
+                        fs.writeFileSync(coverPath, Buffer.from(picture.data));
                     }
                     
-                    // O link que o frontend vai usar para mostrar a imagem
                     coverUrl = `/covers/${coverFileName}`;
                 }
 
@@ -116,7 +119,7 @@ app.get('/api/tracks', async (req, res) => {
                 cover: coverUrl, 
                 lyrics: lyrics,
                 isLocal: false, 
-                needsMetadata: false, // Como o backend já tratou disso, o frontend já não precisa tentar
+                needsMetadata: false, 
                 addedAt: fileStat.birthtimeMs 
             });
         }
