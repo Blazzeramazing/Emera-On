@@ -129,12 +129,3 @@ app.get('/api/tracks', (req, res) => {
 // Rota para extrair e servir a imagem da capa de uma música específica a pedido
 app.get('/api/cover/:filename', async (req, res) => {
     const filePath = path.join(MUSIC_DIR, req.params.filename);
-    
-    if (!fs.existsSync(filePath)) {
-        return res.status(404).end();
-    }
-    
-    try {
-        const metadata = await mm.parseFile(fi
-
-                                        
