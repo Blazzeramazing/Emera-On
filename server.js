@@ -5,12 +5,13 @@ const cors = require('cors');
 const mm = require('music-metadata'); // Essencial para ler as capas e artistas
 
 const app = express();
-const PORT = 3000;
+// O Render utiliza variáveis de ambiente para a porta. Se não existir, usa a 3000.
+const PORT = process.env.PORT || 3000;
 
 const MUSIC_DIR = path.join(__dirname, 'music');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
-//// Criar a pasta 'music' se ela não existir
+// Criar a pasta 'music' se ela não existir
 if (!fs.existsSync(MUSIC_DIR)) {
     fs.mkdirSync(MUSIC_DIR);
     console.log("Pasta 'music' criada. Coloque as suas músicas lá dentro!");
@@ -18,7 +19,7 @@ if (!fs.existsSync(MUSIC_DIR)) {
 
 app.use(cors());
 
-//// Servir a interface (se aplicável)
+// Servir a interface (se aplicável)
 app.use(express.static(PUBLIC_DIR));
 
 // Servir os ficheiros de áudio diretamente
@@ -27,7 +28,7 @@ app.use('/music', express.static(MUSIC_DIR));
 let trackCache = [];
 let isCacheReady = false;
 
-//// 1. Constrói uma cache básica INSTANTÂNEA para o servidor arrancar logo
+// 1. Constrói uma cache básica INSTANTÂNEA para o servidor arrancar logo e passar no "Health Check" do Render
 function buildBasicCache() {
     try {
         const files = fs.readdirSync(MUSIC_DIR);
@@ -52,7 +53,7 @@ function buildBasicCache() {
     }
 }
 
-//// 2. Processa os metadados LENTAMENTE em segundo plano (Proteção de CPU/RAM para o Render)
+// 2. Processa os metadados LENTAMENTE em segundo plano (Proteção de CPU/RAM para o Render)
 async function buildMetadataCache() {
     console.log("Iniciando o processamento avançado de metadados (capas e artistas)...");
     
@@ -103,11 +104,11 @@ async function buildMetadataCache() {
     }
 }
 
-//// Executa o cache básico de forma síncrona, e o avançado em modo Assíncrono (sem await)
+// Executa o cache básico de forma síncrona, e o avançado em modo Assíncrono (sem await)
 buildBasicCache();
 buildMetadataCache(); 
 
-//// API principal para o frontend obter a lista de músicas
+// API principal para o frontend obter a lista de músicas
 app.get('/api/tracks', (req, res) => {
     // Constrói o URL base corretamente baseado no servidor atual
     const protocol = req.headers['x-forwarded-proto'] || req.protocol;
@@ -126,7 +127,7 @@ app.get('/api/tracks', (req, res) => {
     res.json(responseData);
 });
 
-//// Rota para extrair e servir a imagem da capa de uma música específica a pedido
+// Rota para extrair e servir a imagem da capa de uma música específica a pedido
 app.get('/api/cover/:filename', async (req, res) => {
     const filePath = path.join(MUSIC_DIR, req.params.filename);
     
@@ -135,7 +136,7 @@ app.get('/api/cover/:filename', async (req, res) => {
     }
     
     try {
-        const metadata = await mm.parseFile(filePath); // Corrigido: Agora lê o ficheiro correto
+        const metadata = await mm.parseFile(filePath); 
         if (metadata.common.picture && metadata.common.picture.length > 0) {
             const picture = metadata.common.picture[0];
             res.set('Content-Type', picture.format); // picture.format contém o MIME type
@@ -148,9 +149,10 @@ app.get('/api/cover/:filename', async (req, res) => {
     }
 });
 
-//app.listen(PORT, '0.0.0.0', () => {
+// CORREÇÃO: O '//' foi removido desta linha. Agora o servidor inicia corretamente.
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`===========================================`);
     console.log(`🚀 Emera Server Iniciado Imediatamente!`);
-    console.log(`🌐 Aceda em: http://localhost:${PORT}`);
+    console.log(`🌐 Aceda em porta: ${PORT}`);
     console.log(`===========================================`);
 });
