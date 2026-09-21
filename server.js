@@ -1,7 +1,9 @@
+```javascript:server.js
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
+const mm = require('music-metadata'); // Nova biblioteca para ler metadados
 
 const app = express();
 const PORT = 3000;
@@ -18,20 +20,22 @@ if (!fs.existsSync(MUSIC_DIR)) {
 
 app.use(cors());
 
-// Servir a interface (o seu HTML ficará na pasta public)
+// Servir a interface (se aplicável)
 app.use(express.static(PUBLIC_DIR));
 
 // Servir os ficheiros de áudio
 app.use('/music', express.static(MUSIC_DIR));
 
-// API que lista as músicas para o seu HTML ler
-app.get('/api/tracks', (req, res) => {
-    fs.readdir(MUSIC_DIR, (err, files) => {
-        if (err) {
-            console.error("Erro ao ler a pasta de música:", err);
-            return res.status(500).json({ error: 'Erro no servidor' });
-        }
+// Cache global para não processar 200 músicas a cada pedido
+let trackCache = [];
+let isCacheReady = false;
 
+// Função para construir a cache de metadados
+async function buildMetadataCache() {
+    console.log("A processar metadados das músicas. Aguarde...");
+    try {
+        const files = fs.readdirSync(MUSIC_DIR);
+        
         // Filtrar apenas ficheiros de áudio suportados
         const audioFiles = files.filter(f => 
             f.toLowerCase().endsWith('.mp3') || 
@@ -40,27 +44,114 @@ app.get('/api/tracks', (req, res) => {
             f.toLowerCase().endsWith('.m4a')
         );
 
-        // Mapear ficheiros para o formato que o Emera Player espera
-        const tracks = audioFiles.map((file, index) => {
-            // Usa o nome do ficheiro como título base
-            const title = file.replace(/\.[^/.]+$/, ""); 
+        let tempCache = [];
+        for (let i = 0; i < audioFiles.length; i++) {
+            const file = audioFiles[i];
+            const filePath = path.join(MUSIC_DIR, file);
+            
+            try {
+                // Ler os metadados do ficheiro (ID3, MP4 tags, etc.)
+                const metadata = await mm.parseFile(filePath);
+                
+                const title = metadata.common.title || file.replace(/\.[^/.]+$/, "");
+                const artist = metadata.common.artist || "Desconhecido";
+                
+                let genre = "Desconhecido";
+                if (metadata.common.genre && metadata.common.genre.length > 0) {
+                    genre = metadata.common.genre[0];
+                }
+                
+                let lyrics = "";
+                if (metadata.common.lyrics && metadata.common.lyrics.length > 0) {
+                    lyrics = metadata.common.lyrics[0];
+                }
+                
+                // Verificar se a música tem capa (sem guardar a imagem pesada na memória RAM)
+                const hasCover = metadata.common.picture && metadata.common.picture.length > 0;
 
-            return {
-                id: `server_${index}`, // ID único baseado no servidor
-                title: title,
-                artist: "Servidor", // Pode separar "Artista - Titulo" via código no futuro
-                genre: "Desconhecido",
-                src: `/music/${encodeURIComponent(file)}`, // URL de acesso
-                cover: null,
-                lyrics: "",
-                isLocal: false, // isLocal false evita que grave na IndexedDB do navegador e poupe cache
-                needsMetadata: false, // Evita que o client tente extrair ID3 via rede (muito pesado para 2000 musicas)
-                addedAt: fs.statSync(path.join(MUSIC_DIR, file)).birthtimeMs // Ordena por data de criação do ficheiro
-            };
-        });
+                tempCache.push({
+                    id: `server_${i}`,
+                    title: title,
+                    artist: artist,
+                    genre: genre,
+                    srcPath: `/music/${encodeURIComponent(file)}`, // Caminho interno
+                    coverPath: hasCover ? `/api/cover/${encodeURIComponent(file)}` : null, // Caminho interno
+                    lyrics: lyrics,
+                    isLocal: false, 
+                    needsMetadata: false, 
+                    addedAt: fs.statSync(filePath).birthtimeMs 
+                });
+            } catch (err) {
+                console.warn(`Aviso: Sem tags suportadas em ${file}`);
+                // Fallback caso não seja possível ler (ficheiro corrompido ou formato não padronizado)
+                tempCache.push({
+                    id: `server_${i}`,
+                    title: file.replace(/\.[^/.]+$/, ""),
+                    artist: "Desconhecido",
+                    genre: "Desconhecido",
+                    srcPath: `/music/${encodeURIComponent(file)}`,
+                    coverPath: null,
+                    lyrics: "",
+                    isLocal: false,
+                    needsMetadata: false,
+                    addedAt: fs.statSync(filePath).birthtimeMs
+                });
+            }
+        }
+        
+        trackCache = tempCache;
+        isCacheReady = true;
+        console.log(`Metadados de ${trackCache.length} músicas carregados com sucesso!`);
+    } catch (err) {
+        console.error("Erro fatal ao construir cache:", err);
+    }
+}
 
-        res.json(tracks);
+// Iniciar a leitura imediatamente ao ligar o servidor
+buildMetadataCache();
+
+// API que lista as músicas para o seu HTML ler
+app.get('/api/tracks', async (req, res) => {
+    
+    // Se a cache ainda estiver a carregar (cold start no Render), aguardamos para evitar erros no frontend
+    while (!isCacheReady) {
+        await new Promise(r => setTimeout(r, 500));
+    }
+    
+    // Constrói o URL absoluto dinamicamente
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.get('host');
+    const baseUrl = `${protocol}://${host}`;
+    
+    // Mapear ficheiros para incluir o link absoluto com metadados reais
+    const responseData = trackCache.map(track => {
+        return {
+            ...track,
+            src: `${baseUrl}${track.srcPath}`,
+            cover: track.coverPath ? `${baseUrl}${track.coverPath}` : null
+        };
     });
+
+    res.json(responseData);
+});
+
+// NOVO ENDPOINT: Serve a imagem da capa da música apenas quando é solicitada
+app.get('/api/cover/:filename', async (req, res) => {
+    const filePath = path.join(MUSIC_DIR, req.params.filename);
+    if (!fs.existsSync(filePath)) return res.status(404).end();
+    
+    try {
+        const metadata = await mm.parseFile(filePath);
+        if (metadata.common.picture && metadata.common.picture.length > 0) {
+            const picture = metadata.common.picture[0];
+            res.set('Content-Type', picture.format);
+            res.send(picture.data);
+        } else {
+            res.status(404).end();
+        }
+    } catch (err) {
+        res.status(404).end();
+    }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
