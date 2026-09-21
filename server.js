@@ -129,3 +129,28 @@ app.get('/api/tracks', (req, res) => {
 // Rota para extrair e servir a imagem da capa de uma música específica a pedido
 app.get('/api/cover/:filename', async (req, res) => {
     const filePath = path.join(MUSIC_DIR, req.params.filename);
+    
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).end();
+    }
+    
+    try {
+        const metadata = await mm.parseFile(filePath); // Aqui estava o erro de cópia!
+        if (metadata.common.picture && metadata.common.picture.length > 0) {
+            const picture = metadata.common.picture[0];
+            res.set('Content-Type', picture.format);
+            res.send(picture.data);
+        } else {
+            res.status(404).end(); // Não tem capa embutida
+        }
+    } catch (err) {
+        res.status(404).end();
+    }
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`===========================================`);
+    console.log(`🚀 Emera Server Iniciado Imediatamente!`);
+    console.log(`🌐 Aceda em: http://localhost:${PORT}`);
+    console.log(`===========================================`);
+});
