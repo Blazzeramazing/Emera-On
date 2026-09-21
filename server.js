@@ -136,3 +136,5 @@ app.get('/api/cover/:filename', async (req, res) => {
     
     try {
         const metadata = await mm.parseFile(fi
+
+                                        
